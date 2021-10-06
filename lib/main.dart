@@ -1,161 +1,79 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'dart:async';
-import 'package:icloud_storage/icloud_storage.dart';
+import 'package:http/http.dart' as http;
+
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 void main() {
   runApp(MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  static const iCloudContainerId = '{your icloud container id}';
+class MyApp extends StatefulWidget {
+  @override
+  _MyAppState createState() => _MyAppState();
+}
 
-  void handleError(dynamic err) {
-    if (err is PlatformException) {
-      if (err.code == PlatformExceptionCode.iCloudConnectionOrPermission) {
-        print(
-            'Platform Exception: iCloud container ID is not valid, or user is not signed in for iCloud, or user denied iCloud permission for this app');
-      } else {
-        print('Platform Exception: ${err.message}; Details: ${err.details}');
-      }
-    } else {
-      print(err.toString());
-    }
-  }
-
-  Future<void> testListFile() async {
-    try {
-      final iCloudStorage = await ICloudStorage.getInstance(iCloudContainerId);
-      final files = await iCloudStorage.listFiles();
-      files.forEach((file) => print('--- List Files --- file: $file'));
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
-  Future<void> testWatchFile() async {
-    try {
-      final iCloudStorage = await ICloudStorage.getInstance(iCloudContainerId);
-      final fileListStream = await iCloudStorage.watchFiles();
-      final fileListSubscription = fileListStream.listen((files) {
-        files.forEach((file) => print('--- Watch Files --- file: $file'));
-      });
-
-      Future.delayed(Duration(seconds: 10), () {
-        fileListSubscription.cancel();
-        print('--- Watch Files --- canceled');
-      });
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
-  Future<void> testUploadFile() async {
-    try {
-      final iCloudStorage = await ICloudStorage.getInstance(iCloudContainerId);
-      StreamSubscription<double> uploadProgressSubcription;
-      var isUploadComplete = false;
-
-      await iCloudStorage.startUpload(
-        filePath: '{your local file}',
-        destinationFileName: 'test_icloud_file',
-        onProgress: (stream) {
-          uploadProgressSubcription = stream.listen(
-                (progress) => print('--- Upload File --- progress: $progress'),
-            onDone: () {
-              isUploadComplete = true;
-              print('--- Upload File --- done');
-            },
-            onError: (err) => print('--- Upload File --- error: $err'),
-            cancelOnError: true,
-          );
-        },
-      );
-
-      Future.delayed(Duration(seconds: 10), () {
-        if (!isUploadComplete) {
-          uploadProgressSubcription?.cancel();
-          print('--- Upload File --- timed out');
-        }
-      });
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
-  Future<void> testDownloadFile() async {
-    try {
-      final iCloudStorage = await ICloudStorage.getInstance(iCloudContainerId);
-      StreamSubscription<double> downloadProgressSubcription;
-      var isDownloadComplete = false;
-
-      await iCloudStorage.startDownload(
-        fileName: 'test_icloud_file',
-        destinationFilePath: '{your destination file path}',
-        onProgress: (stream) {
-          downloadProgressSubcription = stream.listen(
-                (progress) => print('--- Download File --- progress: $progress'),
-            onDone: () {
-              isDownloadComplete = true;
-              print('--- Download File --- done');
-            },
-            onError: (err) => print('--- Download File --- error: $err'),
-            cancelOnError: true,
-          );
-        },
-      );
-
-      Future.delayed(Duration(seconds: 20), () {
-        if (!isDownloadComplete) {
-          downloadProgressSubcription?.cancel();
-          print('--- Download File --- timed out');
-        }
-      });
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
-  Future<void> testDeleteFile() async {
-    try {
-      final iCloudStorage = await ICloudStorage.getInstance(iCloudContainerId);
-      await iCloudStorage.delete('test_icloud_file');
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
+class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('icloud_storage plugin example app'),
+          title: const Text('Example app: Sign in with Apple'),
         ),
-        body: Center(
-          child: Column(
-            children: [
-              FlatButton(
-                child: Text('List File'),
-                onPressed: testListFile,
-              ),
-              FlatButton(
-                child: Text('Watch File'),
-                onPressed: testWatchFile,
-              ),
-              FlatButton(
-                child: Text('Start Upload'),
-                onPressed: testUploadFile,
-              ),
-              FlatButton(
-                child: Text('Start Download'),
-                onPressed: testDownloadFile,
-              ),
-              FlatButton(
-                child: Text('Delete File'),
-                onPressed: testDeleteFile,
-              ),
-            ],
+        body: Container(
+          padding: EdgeInsets.all(10),
+          child: Center(
+            child: SignInWithAppleButton(
+              onPressed: () async {
+                final credential = await SignInWithApple.getAppleIDCredential(
+                  scopes: [
+                    AppleIDAuthorizationScopes.email,
+                    AppleIDAuthorizationScopes.fullName,
+                  ],
+                  webAuthenticationOptions: WebAuthenticationOptions(
+                    // TODO: Set the `clientId` and `redirectUri` arguments to the values you entered in the Apple Developer portal during the setup
+                    clientId:
+                    'com.aboutyou.dart_packages.sign_in_with_apple.example',
+                    redirectUri: Uri.parse(
+                      'https://flutter-sign-in-with-apple-example.glitch.me/callbacks/sign_in_with_apple',
+                    ),
+                  ),
+                  // TODO: Remove these if you have no need for them
+                  nonce: 'example-nonce',
+                  state: 'example-state',
+                );
+
+                print(credential);
+
+                // This is the endpoint that will convert an authorization code obtained
+                // via Sign in with Apple into a session in your system
+                final signInWithAppleEndpoint = Uri(
+                  scheme: 'https',
+                  host: 'flutter-sign-in-with-apple-example.glitch.me',
+                  path: '/sign_in_with_apple',
+                  queryParameters: <String, String>{
+                    'code': credential.authorizationCode,
+                    if (credential.givenName != null)
+                      'firstName': credential.givenName!,
+                    if (credential.familyName != null)
+                      'lastName': credential.familyName!,
+                    'useBundleId':
+                    Platform.isIOS || Platform.isMacOS ? 'true' : 'false',
+                    if (credential.state != null) 'state': credential.state!,
+                  },
+                );
+
+                final session = await http.Client().post(
+                  signInWithAppleEndpoint,
+                );
+
+                // If we got this far, a session based on the Apple ID credential has been created in your system,
+                // and you can now set this as the app's session
+                print(session);
+              },
+            ),
           ),
         ),
       ),
